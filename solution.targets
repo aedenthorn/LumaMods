@@ -132,6 +132,11 @@
       <HintPath>$(UnityPath)\Unity.Mathematics.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="Unity.Localization">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(UnityPath)\Unity.Localization.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="UnityEngine.ParticleSystemModule">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>$(UnityPath)\UnityEngine.ParticleSystemModule.dll</HintPath>
