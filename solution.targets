@@ -37,7 +37,7 @@
   <!-- Set start action -->
   <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
     <StartAction>Program</StartAction>
-    <StartProgram>$(GamePath)\Planet Crafter.exe</StartProgram>
+    <StartProgram>$(GamePath)\Luma Island.exe</StartProgram>
     <StartArguments>-console</StartArguments>
     <StartWorkingDirectory>$(GamePath)</StartWorkingDirectory>
   </PropertyGroup>

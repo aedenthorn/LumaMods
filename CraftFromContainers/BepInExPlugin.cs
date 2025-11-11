@@ -4,11 +4,8 @@ using BepInEx.Logging;
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
-using Unity.Mathematics;
-using UnityEngine;
 
 namespace CraftFromContainers
 {
@@ -21,6 +18,11 @@ namespace CraftFromContainers
         public static ConfigEntry<bool> isDebug;
 
         public static BepInExPlugin context;
+
+        public static bool listDirty = false;
+        
+        public static IEnumerable<StorageBox> storageList = new List<StorageBox>();
+        public static Level lastLevel;
         public static void Dbgl(object str, LogLevel level = LogLevel.Debug)
         {
             if (isDebug.Value)
@@ -38,36 +40,33 @@ namespace CraftFromContainers
             Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly(), MetadataHelper.GetMetadata(this).GUID );
 
         }
-
-
-
-        [HarmonyPatch(typeof(Inventory), nameof(Inventory.GetCount), new Type[] { typeof(InventoryItem) })]
-        public static class Inventory_GetCount_Patch1
+        public static IEnumerable<StorageBox> GetStorageList(Level currentLevel, bool force = false)
         {
-
-            public static void Postfix(Inventory __instance, InventoryItem type, ref int __result)
+            if (!modEnabled.Value)
+                return new List<StorageBox>();
+            if(lastLevel != currentLevel || force || listDirty)
             {
-                if (skip || !modEnabled.Value || __instance.Player?.CurrentLevel == null)
-                    return;
-
-                IEnumerable<StorageBox> list;
                 try
                 {
-                    list = __instance.Player.CurrentLevel.FindObjectsOfType<StorageBox>().Where(s => s != null && s.IsLocked == false);
-                    if (!list.Any())
-                        return;
+                    storageList = currentLevel.FindObjectsOfType<StorageBox>().Where(s => s != null && s.IsLocked == false);
                 }
-                catch
-                {
-                    return;
-                }
+                catch { }
+            }
+            lastLevel = currentLevel;
+            listDirty = false;
+            return storageList;
+        }
 
-                foreach (var s in list)
-                {
-                    skip = true;
-                    __result += s.Inventory.GetCount(type);
-                    skip = false;
-                }
+
+        [HarmonyPatch(typeof(StorageBox), nameof(StorageBox.OnPlace))]
+        public static class StorageBox_OnPlace_Patch
+        {
+
+            public static void Postfix(StorageBox __instance)
+            {
+                if (!modEnabled.Value)
+                    return;
+                listDirty = true;
             }
         }
 
@@ -81,17 +80,7 @@ namespace CraftFromContainers
                 if (skip || !modEnabled.Value || __instance.Player?.CurrentLevel == null)
                     return;
 
-                IEnumerable<StorageBox> list;
-                try
-                {
-                    list = __instance.Player.CurrentLevel.FindObjectsOfType<StorageBox>().Where(s => s != null && s.IsLocked == false);
-                    if (!list.Any())
-                        return;
-                }
-                catch
-                {
-                    return;
-                }
+                IEnumerable<StorageBox> list = GetStorageList(__instance.Player.CurrentLevel);
 
                 foreach (var s in list)
                 {
@@ -112,17 +101,7 @@ namespace CraftFromContainers
                 if (skip || !modEnabled.Value || __instance.Player?.CurrentLevel == null)
                     return;
 
-                IEnumerable<StorageBox> list;
-                try
-                {
-                    list = __instance.Player.CurrentLevel.FindObjectsOfType<StorageBox>().Where(s => s != null && s.IsLocked == false);
-                    if (!list.Any())
-                        return;
-                }
-                catch
-                {
-                    return;
-                }
+                IEnumerable<StorageBox> list = GetStorageList(__instance.Player.CurrentLevel);
 
                 foreach (var s in list)
                 {
@@ -134,45 +113,88 @@ namespace CraftFromContainers
         }
 
 
+        [HarmonyPatch(typeof(Inventory), nameof(Inventory.TakeOne), new Type[] { typeof(InventoryItem), typeof(int), typeof(bool) })]
+        public static class Inventory_TakeOne_Patch
+        {
+            public static bool Prefix(Inventory __instance, InventoryItem item, int preferredIndex, bool showNotification, ref int __result)
+            {
+                if (skip || !modEnabled.Value || __instance.Player?.CurrentLevel == null)
+                    return true;
+
+                var TryTakeOne = AccessTools.Method(typeof(Inventory), "TryTakeOne");
+                for (int i = 0; i < __instance.NumSlots; i++)
+                {
+                    if ((bool)TryTakeOne.Invoke(__instance, new object[] { item, i, showNotification }))
+                    {
+                        __result = i;
+                        return false;
+                    }
+                }
+                IEnumerable<StorageBox> list = GetStorageList(__instance.Player.CurrentLevel);
+
+                foreach (var s in list)
+                {
+                    for (int i = 0; i < s.Inventory.NumSlots; i++)
+                    {
+                        if ((bool)TryTakeOne.Invoke(s.Inventory, new object[] { item, i, showNotification }))
+                        {
+                            __result = i;
+                            return false;
+                        }
+                    }
+                }
+                Dbgl($"Item {item.GetDescriptiveName()} not found!", LogLevel.Warning);
+                __result = -1;
+                return false;
+            }
+        }
+
+
         [HarmonyPatch(typeof(Inventory), nameof(Inventory.Take), new Type[] { typeof(List<ItemStack>), typeof(int), typeof(bool), typeof(bool) })]
         public static class Inventory_Take_Patch
         {
-
             public static bool Prefix(Inventory __instance, List<ItemStack> required, int preferredIndex, bool onlyUsePreferredIndex, bool showNotification, ref int __result)
             {
                 if (skip || !modEnabled.Value || __instance.Player?.CurrentLevel == null)
                     return true;
+
                 var req = new List<ItemStack>();
                 req.AddRange(required);
-                IEnumerable<StorageBox> list;
-                try
-                {
-                    list = __instance.Player.CurrentLevel.FindObjectsOfType<StorageBox>().Where(s => s != null && s.IsLocked == false);
-                    if (!list.Any())
-                        return true;
-                }
-                catch 
-                {
-                    return true;
-                }
+
+                IEnumerable<StorageBox> list = GetStorageList(__instance.Player.CurrentLevel);
 
                 for (int i = req.Count - 1; i >= 0; i--)
                 {
                     if(req[i]?.item != null)
                     {
+                        int amount = req[i].amount;
                         skip = true;
-                        int player = __instance.Player.Inventory.Take(new List<ItemStack> { req[i] });
+                        int player = __instance.Take(new List<ItemStack> {
+                            new ItemStack
+                            {
+                                item = req[i].item,
+                                amount = req[i].amount
+                            } 
+                        });
                         skip = false;
-                        req[i].amount -= player;
-                        if (req[i].amount > 0)
+                        __result += player;
+                        amount -= player;
+                        if (amount > 0)
                         {
                             foreach (var s in list)
                             {
                                 skip = true;
-                                int storage = s.Inventory.Take(new List<ItemStack> { req[i] });
+                                int storage = s.Inventory.Take(new List<ItemStack> {
+                                    new ItemStack
+                                    {
+                                        item = req[i].item,
+                                        amount = amount
+                                    }
+                                });
                                 skip = false;
-                                req[i].amount -= storage;
-                                if (req[i].amount <= 0)
+                                amount -= storage;
+                                __result += storage;
+                                if (amount <= 0)
                                     goto next;
                             }
                         }
@@ -194,17 +216,7 @@ namespace CraftFromContainers
                 var req = new List<ItemStack>();
                 req.AddRange(required);
 
-                IEnumerable<StorageBox> list;
-                try
-                {
-                    list = __instance.Player.CurrentLevel.FindObjectsOfType<StorageBox>().Where(s => s != null && s.IsLocked == false);
-                    if (!list.Any())
-                        return;
-                }
-                catch
-                {
-                    return;
-                }
+                IEnumerable<StorageBox> list = GetStorageList(__instance.Player.CurrentLevel);
 
                 for (int i = req.Count - 1; i >= 0; i--)
                 {
