@@ -35,52 +35,48 @@ namespace QuickTorch
             context = this;
             modEnabled = Config.Bind<bool>("General", "Enabled", true, "Enable this mod");
             isDebug = Config.Bind<bool>("General", "IsDebug", true, "Enable debug log");
-            placeKey = Config.Bind<string>("General", "PlaceKey", "<Keyboard>r", "Place key");
+            placeKey = Config.Bind<string>("General", "PlaceKey", "<Keyboard>/r", "Place key");
 
             placeAction = new InputAction(binding: placeKey.Value);
             placeAction.Enable();
-
-            Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly(), MetadataHelper.GetMetadata(this).GUID );
+            placeAction.performed += PlaceAction_performed;
 
         }
 
-        [HarmonyPatch(typeof(LocalPlayerController), nameof(LocalPlayerController.Update))]
-        public static class LocalPlayerController_Update_Patch
+        private void PlaceAction_performed(InputAction.CallbackContext obj)
         {
+            if (!modEnabled.Value)
+                return;
+            Dbgl("Pressed place key");
+            LocalPlayerController localPlayer = PlayersManager.Instance?.LocalPlayer;
+            if (localPlayer?.GameUI?.UIController?.HasCloseableElementsOpen() != false)
+                return;
 
-            public static void Postfix(LocalPlayerController __instance)
+            for (int i = 0; i < localPlayer.Inventory.NumSlots; i++)
             {
-                if (!modEnabled.Value)
-                    return;
-                if (placeAction.WasPressedThisFrame())
+                ItemStack itemStack = localPlayer.Inventory.m_items[i];
+
+                if (itemStack?.item?.type?.IsTorch() == true)
                 {
-                    Dbgl("Pressed place key");
-                    for (int i = 0; i < __instance.Inventory.NumSlots; i++)
+                    InventoryItem item = itemStack.item;
+                    itemStack.amount--;
+                    if (localPlayer.Inventory.AutoDeleteEmptyStacks && itemStack.amount == 0)
                     {
-                        ItemStack itemStack = __instance.Inventory.m_items[i];
-
-                        if (itemStack?.item?.type?.IsTorch() == true)
-                        {
-                            InventoryItem item = itemStack.item;
-                            itemStack.amount--;
-                            if (__instance.Inventory.AutoDeleteEmptyStacks && itemStack.amount == 0)
-                            {
-                                __instance.Inventory.m_items[i] = null;
-                            }
-                            __instance.Inventory.SlotChanged(i, -1, item.type, true);
-                            Action<ItemStack, int> onRemovedFromInventory = __instance.Inventory.OnRemovedFromInventory;
-                            if (onRemovedFromInventory != null)
-                            {
-                                onRemovedFromInventory(itemStack, 1);
-                            }
-                            WorldItemsData worldItemsData = item.type.ToWorldItem();
-
-                            __instance.BeginPlacement(worldItemsData, item.type);
-                            break;
-                        }
+                        localPlayer.Inventory.m_items[i] = null;
                     }
+                    localPlayer.Inventory.SlotChanged(i, -1, item.type, true);
+                    Action<ItemStack, int> onRemovedFromInventory = localPlayer.Inventory.OnRemovedFromInventory;
+                    if (onRemovedFromInventory != null)
+                    {
+                        onRemovedFromInventory(itemStack, 1);
+                    }
+                    WorldItemsData worldItemsData = item.type.ToWorldItem();
+
+                    localPlayer.BeginPlacement(worldItemsData, item.type);
+                    break;
                 }
             }
         }
+
     }
 }
