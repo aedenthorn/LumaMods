@@ -34,6 +34,7 @@ namespace AdvancedSort
             Name,
             Type,
             Usage,
+            Order,
             Value
         }
 
@@ -141,6 +142,17 @@ namespace AdvancedSort
                 if (!modEnabled.Value)
                     return;
                 MakeButtons(___m_sortChestButton, true);
+            }
+        }
+        [HarmonyPatch(typeof(UIShopWindow), "OnOpened")]
+        public static class UIShopWindow_OnOpened_Patch
+        {
+
+            public static void Prefix(UIShopWindow __instance, ButtonWidget ___m_sortButton)
+            {
+                if (!modEnabled.Value)
+                    return;
+                MakeButtons(___m_sortButton, true);
             }
         }
         [HarmonyPatch(typeof(Inventory), nameof(Inventory.Sort))]

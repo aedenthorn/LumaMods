@@ -68,6 +68,11 @@ namespace AdvancedSort
                     if (result == 0)
                         result = SortByName(x, y);
                     break;
+                case BepInExPlugin.SortType.Order:
+                    result = SortByOrder(x, y);
+                    if (result == 0)
+                        result = SortByName(x, y);
+                    break;
             }
 
             if (result == 0)
@@ -85,7 +90,33 @@ namespace AdvancedSort
 
         private int SortByValue(ItemStack x, ItemStack y)
         {
-            var result = x.item.type.GetSellValue().CompareTo(y.item.type.GetSellValue());
+            int result = 0;
+            if (x.item.type == null && y.item.type == null)
+                result = 0;
+            else if (x.item.type == null)
+                result = -1;
+            else if (y.item.type == null)
+                result = 1;
+            else
+            {
+                result = x.item.type.GetSellValue().CompareTo(y.item.type.GetSellValue());
+            }
+            return result * (ascending ? 1 : -1);
+        }
+
+        private int SortByOrder(ItemStack x, ItemStack y)
+        {
+            int result = 0;
+            if (x.item.type == null && y.item.type == null)
+                result = 0;
+            else if (x.item.type == null)
+                result = -1;
+            else if (y.item.type == null)
+                result = 1;
+            else
+            {
+                result = x.item.type.Sorting.CompareTo(y.item.type.Sorting);
+            }
             return result * (ascending ? 1 : -1);
         }
 
@@ -111,7 +142,6 @@ namespace AdvancedSort
                 };
                 var ys = yl.GetLocalizedString();
                 result = xs.CompareTo(ys);
-                BepInExPlugin.Dbgl($"result: {result}, x: {xs}, y: {ys}");
             }
             return result * (ascending ? 1 : -1);
         }
@@ -131,7 +161,6 @@ namespace AdvancedSort
                 var ys = y.item.type.GetClassificationName();
 
                 result = xs.CompareTo(ys);
-                BepInExPlugin.Dbgl($"result: {result}, x: {xs}, y: {ys}");
             }
             return result * (ascending ? 1 : -1);
         }
